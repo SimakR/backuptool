@@ -1,0 +1,54 @@
+﻿<?xml version='1.0' encoding='utf-8'?>
+<SettingsFile xmlns="http://schemas.microsoft.com/VisualStudio/2004/01/settings" CurrentProfile="(Default)" GeneratedClassNamespace="backuptool.Properties" GeneratedClassName="Settings">
+  <Profiles />
+  <Settings>
+    <Setting Name="Path7z" Type="System.String" Scope="Application">
+      <Value Profile="(Default)">7z.exe</Value>
+    </Setting>
+    <Setting Name="BatchSizeMax" Type="System.Int64" Scope="Application">
+      <Value Profile="(Default)">10737418240</Value>
+    </Setting>
+    <Setting Name="Additional7zArgs" Type="System.String" Scope="Application">
+      <Value Profile="(Default)">-spf -scsUTF-8 -t7z -mx=5 -mmemuse=p50</Value>
+    </Setting>
+    <Setting Name="DestinationPath" Type="System.String" Scope="Application">
+      <Value Profile="(Default)">d:\temp</Value>
+    </Setting>
+    <Setting Name="FixLongPath" Type="System.Boolean" Scope="Application">
+      <Value Profile="(Default)">True</Value>
+    </Setting>
+    <Setting Name="WorkMode" Type="System.String" Scope="Application">
+      <Value Profile="(Default)">both</Value>
+    </Setting>
+    <Setting Name="BlackList" Type="System.Collections.Specialized.StringCollection" Scope="Application">
+      <Value Profile="(Default)">&lt;?xml version="1.0" encoding="utf-16"?&gt;
+&lt;ArrayOfString xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"&gt;
+  &lt;string&gt;\AppData&lt;/string&gt;
+  &lt;string&gt;C:\PerfLogs&lt;/string&gt;
+  &lt;string&gt;C:\Program Files&lt;/string&gt;
+  &lt;string&gt;C:\Program Files (x86)&lt;/string&gt;
+  &lt;string&gt;C:\ProgramData&lt;/string&gt;
+  &lt;string&gt;:\$Recycle.Bin&lt;/string&gt;
+  &lt;string&gt;C:\Python&lt;/string&gt;
+  &lt;string&gt;C:\Sandbox&lt;/string&gt;
+  &lt;string&gt;C:\tools&lt;/string&gt;
+  &lt;string&gt;C:\usr&lt;/string&gt;
+  &lt;string&gt;C:\Temp&lt;/string&gt;
+  &lt;string&gt;C:\Tmp&lt;/string&gt;
+  &lt;string&gt;C:\Windows&lt;/string&gt;
+  &lt;string&gt;C:\WSL&lt;/string&gt;
+  &lt;string&gt;C:\Users\Public&lt;/string&gt;
+  &lt;string&gt;C:\Users\Supervisor&lt;/string&gt;
+  &lt;string&gt;C:\Users\Администратор&lt;/string&gt;
+  &lt;string&gt;C:\Users\KlNagSvc&lt;/string&gt;
+  &lt;string&gt;hiberfil.sys&lt;/string&gt;
+  &lt;string&gt;pagefile.sys&lt;/string&gt;
+  &lt;string&gt;D:\install&lt;/string&gt;
+  &lt;string&gt;D:\ARM&lt;/string&gt;
+  &lt;string&gt;C:\CONS.CFG&lt;/string&gt;
+  &lt;string&gt;.lnk&lt;/string&gt;
+  &lt;string&gt;.url&lt;/string&gt;
+&lt;/ArrayOfString&gt;</Value>
+    </Setting>
+  </Settings>
+</SettingsFile>
