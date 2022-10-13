@@ -1,0 +1,42 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="scripts">
+      <UniqueIdentifier>{3a05c131-c49a-4c43-b21e-d1be612431d1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="scripts\backuptool">
+      <UniqueIdentifier>{1edcfe2a-fc74-4b4f-af04-ea679de3c887}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="scripts\7za.dll">
+      <Filter>scripts</Filter>
+    </None>
+    <None Include="scripts\7za.exe">
+      <Filter>scripts</Filter>
+    </None>
+    <None Include="scripts\install.cmd">
+      <Filter>scripts</Filter>
+    </None>
+    <None Include="scripts\backuptool\7za.dll">
+      <Filter>scripts\backuptool</Filter>
+    </None>
+    <None Include="scripts\backuptool\7za.exe">
+      <Filter>scripts\backuptool</Filter>
+    </None>
+    <None Include="scripts\backuptool\diskext.exe">
+      <Filter>scripts\backuptool</Filter>
+    </None>
+    <None Include="scripts\backuptool\dobackup.cmd">
+      <Filter>scripts\backuptool</Filter>
+    </None>
+    <None Include="scripts\backuptool\ListSystemPathes.exe">
+      <Filter>scripts\backuptool</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Xml Include="scripts\backuptool\backuptask.xml">
+      <Filter>scripts\backuptool</Filter>
+    </Xml>
+  </ItemGroup>
+</Project>
