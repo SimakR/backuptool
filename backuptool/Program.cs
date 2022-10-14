@@ -279,6 +279,7 @@ namespace backuptool
             _batchSizeCurrent = 0;
 
             string archivename = FindNextAvailableArchiveName();
+            var outputStream = new StreamWriter("C:\\tools\\backuptool\\7zoutput.txt", append: true);
 
             Process zip7 = new Process();
             zip7.StartInfo.FileName = _settings.Path7z;
@@ -289,13 +290,24 @@ namespace backuptool
 
             //Должно скрывать окно
             //Но почему-то меняет exit code процесса 7z, что не приемлимо
-            //zip7.StartInfo.UseShellExecute = false;
+            zip7.StartInfo.UseShellExecute = false;
             //zip7.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
             //zip7.StartInfo.CreateNoWindow = true;
 
+            zip7.StartInfo.RedirectStandardOutput = true;
+            zip7.OutputDataReceived += new DataReceivedEventHandler((sender, e) =>
+            {
+                if (!String.IsNullOrEmpty(e.Data))
+                {
+                    outputStream.WriteLine(e.Data);
+                }
+            });
+
             zip7.Start();
             zip7.PriorityClass = ProcessPriorityClass.Idle;
+            zip7.BeginOutputReadLine();
             zip7.WaitForExit();
+            outputStream.Close();
 
             File.Delete(outputPath);
 
