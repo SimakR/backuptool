@@ -25,7 +25,7 @@ namespace backuptool.Properties {
         
         [global::System.Configuration.ApplicationScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("7z.exe")]
+        [global::System.Configuration.DefaultSettingValueAttribute("7za.exe")]
         public string Path7z {
             get {
                 return ((string)(this["Path7z"]));
@@ -34,10 +34,10 @@ namespace backuptool.Properties {
         
         [global::System.Configuration.ApplicationScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("10737418240")]
-        public long BatchSizeMax {
+        [global::System.Configuration.DefaultSettingValueAttribute("1073741824")]
+        public ulong BatchSizeMax {
             get {
-                return ((long)(this["BatchSizeMax"]));
+                return ((ulong)(this["BatchSizeMax"]));
             }
         }
         
@@ -62,9 +62,9 @@ namespace backuptool.Properties {
         [global::System.Configuration.ApplicationScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.DefaultSettingValueAttribute("True")]
-        public bool FixLongPath {
+        public bool FixLongNames {
             get {
-                return ((bool)(this["FixLongPath"]));
+                return ((bool)(this["FixLongNames"]));
             }
         }
         
@@ -82,6 +82,8 @@ namespace backuptool.Properties {
         [global::System.Configuration.DefaultSettingValueAttribute(@"<?xml version=""1.0"" encoding=""utf-16""?>
 <ArrayOfString xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" xmlns:xsd=""http://www.w3.org/2001/XMLSchema"">
   <string>\AppData</string>
+  <string>.cache</string>
+  <string>.vscode</string>
   <string>C:\PerfLogs</string>
   <string>C:\Program Files</string>
   <string>C:\Program Files (x86)</string>
@@ -110,6 +112,15 @@ namespace backuptool.Properties {
         public global::System.Collections.Specialized.StringCollection BlackList {
             get {
                 return ((global::System.Collections.Specialized.StringCollection)(this["BlackList"]));
+            }
+        }
+        
+        [global::System.Configuration.ApplicationScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool Verbose {
+            get {
+                return ((bool)(this["Verbose"]));
             }
         }
     }

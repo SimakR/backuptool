@@ -14,6 +14,37 @@ using System.Text;
 
 namespace backuptool
 {
+    //WINAPI
+    //Для того, чтобы корректно работать с длинными путями, нужно
+    // 1. Использовать юникод-версии функций
+    // 2. Работать через префикс \\?\
+    // Для того чтобы нативно работать с п2, нужен net>4.7, а мы ограничены .net=3.5 (win7)
+
+    // WINAPI #####################################################################################################
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    struct WIN32_FIND_DATAW
+    {
+        public uint dwFileAttributes;
+        public System.Runtime.InteropServices.ComTypes.FILETIME ftCreationTime;
+        public System.Runtime.InteropServices.ComTypes.FILETIME ftLastAccessTime;
+        public System.Runtime.InteropServices.ComTypes.FILETIME ftLastWriteTime;
+        public uint nFileSizeHigh;
+        public uint nFileSizeLow;
+        public uint dwReserved0;
+        public uint dwReserved1;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string cFileName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 14)]
+        public string cAlternateFileName;
+        public uint dwFileType;
+        public uint dwCreatorType;
+        public uint wFinderFlags;
+    }
+    enum GET_FILEEX_INFO_LEVELS
+    {
+        GetFileExInfoStandard,
+        GetFileExMaxInfoLevel
+    }
     [Flags]
     enum MoveFileFlags
     {
@@ -23,6 +54,15 @@ namespace backuptool
         MOVEFILE_WRITE_THROUGH = 0x00000008,
         MOVEFILE_CREATE_HARDLINK = 0x00000010,
         MOVEFILE_FAIL_IF_NOT_TRACKABLE = 0x00000020
+    }
+    // WINAPI #####################################################################################################
+
+    enum Decision
+    {
+        Skip,
+        ArchiveFile,
+        ScanDirectory,
+        Rename
     }
     class UserProfile
     {
@@ -40,105 +80,7 @@ namespace backuptool
             lastusetime = _lastusetime;
         }
     }
-    class Validator
-    {
-        private Settings _settings;
-        private Archiver _archiver;
-        public Validator(Settings settings, Archiver archiver)
-        {
-            _settings = settings;
-            _archiver = archiver;
-        }
-        [return: MarshalAs(UnmanagedType.Bool)]
-        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-        static extern bool MoveFileEx(string lpExistingFileName, string lpNewFileName, MoveFileFlags dwFlags);
-        private void CheckAndFixLength(ref FileSystemInfo entry)
-        {
-            const int maxPath = 127;//255 байт на имя, 2 байта на кирилицу, 255/2 = 127
-            if (entry.Name.Length <= maxPath) return; 
 
-            bool isDir = (entry.Attributes & FileAttributes.Directory) > 0;
-
-            if (isDir)
-            {
-                DirectoryInfo di = (DirectoryInfo)entry;
-
-                string oldname = di.FullName;
-                string newname = di.Parent.FullName + "\\" + di.Name.Substring(0, 100) + String.Format("_{0:X}", di.Name.GetHashCode()) + ((di.Extension.Length > 10) ? di.Extension.Substring(0, 10) :
-                                                                                                                                                                        di.Extension);
-                string metapath = di.Parent.FullName + "\\" + di.Name.Substring(0, 100) + String.Format("_{0:X}", di.Name.GetHashCode()) + ".meta";
-
-                try
-                {
-                    MoveFileEx("\\\\?\\" + oldname, "\\\\?\\" + newname, MoveFileFlags.MOVEFILE_REPLACE_EXISTING);
-                }
-                catch
-                {
-                    Console.WriteLine($"Cannot rename directory {oldname}");
-                }
-
-                try
-                {
-                    using (var meta = new StreamWriter(metapath))
-                    {
-                        meta.WriteLine(oldname);
-                    }
-                }
-                catch { };
-
-                entry = new DirectoryInfo(newname);
-                _archiver.AddToBatch(new FileInfo(metapath));
-            }
-            else
-            {
-                FileInfo fi = (FileInfo)entry;
-
-                string oldname = fi.FullName;
-                string newname = fi.DirectoryName + "\\" + fi.Name.Substring(0, 100) + String.Format("_{0:X}", fi.Name.GetHashCode()) +  ((fi.Extension.Length > 10) ? fi.Extension.Substring(0, 10) :
-                                                                                                                                                                     fi.Extension);
-                string metapath = fi.DirectoryName + "\\" + fi.Name.Substring(0, 100) + String.Format("_{0:X}", fi.Name.GetHashCode()) + ".meta";
-
-                try
-                {
-                    MoveFileEx("\\\\?\\" + oldname, "\\\\?\\" + newname, MoveFileFlags.MOVEFILE_REPLACE_EXISTING);
-                }
-                catch
-                {
-                    Console.WriteLine($"Cannot rename file {oldname}");
-                }
-
-                try
-                {
-                    using (var meta = new StreamWriter(metapath))
-                    {
-                        meta.WriteLine(oldname);
-                    }
-                }
-                catch { };
-
-
-                entry = new FileInfo(newname);
-                _archiver.AddToBatch(new FileInfo(metapath));
-            }
-
-        }
-        public bool IsValidFileOrDirectory(ref FileSystemInfo entry)
-        {
-            if (_settings.FixLongPath) CheckAndFixLength(ref entry);
-
-            string fullname = entry.FullName.ToLower();
-            if (fullname.Length == 3) return true;//drive root
-
-            foreach (string word in _settings.BlackList) if (fullname.Contains(word)) return false;
-
-            if ((entry.Attributes & FileAttributes.ReparsePoint) > 0) return false; //reparse - possible symlink
-            if ((entry.Attributes & FileAttributes.Hidden) > 0) return false; //skip hidden
-
-            //Вроде все проверки
-            //М.б. что-то еще??
-            return true;
-        }
-    }
     class Archiver
     {
         private List<string> _filesArchived;
@@ -146,7 +88,7 @@ namespace backuptool
         private string outputPath;
         private StreamWriter output;
         private int filenamePos7zOutput;
-        private long _batchSizeCurrent = 0;
+        private ulong _batchSizeCurrent = 0;
         private string _archiveTemplate;
         private enum _reader7zState
         {
@@ -154,11 +96,13 @@ namespace backuptool
             ParsingFileList,
             SkipAll
         }
-
         private readonly Settings _settings;
-        public Archiver(Settings settings)
+        // WINAPI #####################################################################################################
+
+        // WINAPI #####################################################################################################
+        public Archiver()
         {
-            _settings = settings;
+            _settings = Settings.getInstance();
             _filesArchived = new List<string>();
             _filesBatch = new List<string>();
         }
@@ -237,13 +181,20 @@ namespace backuptool
             zip7.WaitForExit();
             if ((isBadFile) || (zip7.ExitCode != 0)) File.Delete(archivePath);
         }
-        private bool IsArchivedAlready(FileInfo file)
+        public bool IsArchivedAlready(string filepath, System.Runtime.InteropServices.ComTypes.FILETIME lastwrite)
         {
             //Перевод времени
             //Хз как 7z считает время файла, лень смотреть исходник
             //file.LastWriteTime.IsDaylightSavingTime - показания расходятся с 7z в архиве!
-            string filerec0 = file.FullName.Substring(3).ToLower() + " " + file.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss");
-            string filerec1 = file.FullName.Substring(3).ToLower() + " " + file.LastWriteTime.AddHours(-1).ToString("yyyy-MM-dd HH:mm:ss");
+
+            ulong hiTime = (ulong)lastwrite.dwHighDateTime;
+            uint loTime = (uint)lastwrite.dwLowDateTime;
+            long filetime = (long)((hiTime << 32) + loTime);
+
+            DateTime dtLastWrite = DateTime.FromFileTime(filetime);
+
+            string filerec0 = filepath.Substring(3).ToLower() + " " + dtLastWrite.ToString("yyyy-MM-dd HH:mm:ss");
+            string filerec1 = filepath.Substring(3).ToLower() + " " + dtLastWrite.AddHours(-1).ToString("yyyy-MM-dd HH:mm:ss");
 
             foreach (string record in _filesArchived)
             {
@@ -279,49 +230,35 @@ namespace backuptool
             _batchSizeCurrent = 0;
 
             string archivename = FindNextAvailableArchiveName();
-            var outputStream = new StreamWriter("C:\\tools\\backuptool\\7zoutput.txt", append: true);
 
             Process zip7 = new Process();
             zip7.StartInfo.FileName = _settings.Path7z;
             string resultingArgs = String.Format(_settings.Args7z, archivename, outputPath);
-            if (!zip7.StartInfo.Arguments.Contains("-mmt=")) {resultingArgs += String.Format(" -mmt={0}", Environment.ProcessorCount > 1 ? Environment.ProcessorCount - 1 : 1); }
+            if (!zip7.StartInfo.Arguments.Contains("-mmt=")) { resultingArgs += String.Format(" -mmt={0}", Environment.ProcessorCount > 1 ? Environment.ProcessorCount - 1 : 1); }
 
             zip7.StartInfo.Arguments = resultingArgs;
 
             //Должно скрывать окно
             //Но почему-то меняет exit code процесса 7z, что не приемлимо
-            zip7.StartInfo.UseShellExecute = false;
+            //zip7.StartInfo.UseShellExecute = false;
             //zip7.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
             //zip7.StartInfo.CreateNoWindow = true;
 
-            zip7.StartInfo.RedirectStandardOutput = true;
-            zip7.OutputDataReceived += new DataReceivedEventHandler((sender, e) =>
-            {
-                if (!String.IsNullOrEmpty(e.Data))
-                {
-                    outputStream.WriteLine(e.Data);
-                }
-            });
-
             zip7.Start();
             zip7.PriorityClass = ProcessPriorityClass.Idle;
-            zip7.BeginOutputReadLine();
             zip7.WaitForExit();
-            outputStream.Close();
 
             File.Delete(outputPath);
 
             if ((zip7.ExitCode == 0) || (zip7.ExitCode == 1)) return;
-            
+
             Console.WriteLine($"ERROR: 7z returned {zip7.ExitCode}");
             System.Environment.Exit(zip7.ExitCode);
         }
-        public void AddToBatch(FileInfo file)
+        public void AddToBatch(string filepath, ulong size)
         {
-            if (IsArchivedAlready(file)) return;
-
-            _filesBatch.Add(file.FullName);
-            _batchSizeCurrent += file.Length;
+            _filesBatch.Add(filepath);
+            _batchSizeCurrent += size;
             if (_batchSizeCurrent >= _settings.BatchSizeMax)
             {
                 Call7z();
@@ -332,136 +269,45 @@ namespace backuptool
             Call7z();
         }
     }
-    class WalkerTreeFile
+    class Settings //singleton
     {
-        private readonly Validator _validator;
-        private readonly Archiver _archivator;
-        private readonly Settings _settings;
-        private bool _IgnoreProfileDir;
-        public WalkerTreeFile(Settings settings)
-        {
-            _archivator = new Archiver(settings);
-            _validator = new Validator(settings, _archivator);
-            _settings = settings;
-        }
-        private void ProcessDirectory(DirectoryInfo dir)
-        {
-            FileSystemInfo entry = dir;
-            if ((_IgnoreProfileDir) && entry.FullName.StartsWith("C:\\Users", StringComparison.InvariantCultureIgnoreCase)) return;
+        private static Settings instance;
 
-            if (!_validator.IsValidFileOrDirectory(ref entry)) return;
-            dir = (DirectoryInfo)entry;
-
-            FileInfo[] file_list = { };
-            DirectoryInfo[] dir_list = { };
-            try
-            {
-                file_list = dir.GetFiles();
-                dir_list = dir.GetDirectories();
-            }
-            catch (Exception ex)
-            {
-                if (ex is DirectoryNotFoundException) { Console.WriteLine($"Directory not found {dir.FullName}"); return; }
-                if ((ex is UnauthorizedAccessException) || (ex is System.Security.SecurityException)) { Console.WriteLine($"Cannot access {dir.FullName}"); return; }
-                throw;
-            }
-
-            foreach (FileInfo f in file_list) { ProcessFile(f); }
-            foreach (DirectoryInfo d in dir_list) { ProcessDirectory(d); }
-        }
-        private void ProcessFile(FileInfo file)
-        {
-            FileSystemInfo entry = file;
-            if ((_IgnoreProfileDir) && file.FullName.StartsWith("C:\\Users\\", StringComparison.InvariantCultureIgnoreCase)) return;
-            if (!_validator.IsValidFileOrDirectory(ref entry)) return;
-            file = (FileInfo)entry;
-
-            _archivator.AddToBatch(file);
-        }
-        public void WalkOverDrive(DirectoryInfo root)
-        {
-            _IgnoreProfileDir = _settings.IgnoreProfileDir;
-            _archivator.Initialize(_settings.DestinationPath + "\\" + "drive_" + root.FullName.Substring(0, 1) + "_");
-            ProcessDirectory(root);
-            _archivator.Finnalize();
-        }
-        public void WalkOverProfile(UserProfile profile)
-        {
-            string metapath = _settings.DestinationPath + "\\profile_" + profile.name.ToLower() + ".meta";
-
-            StreamWriter file = new StreamWriter(metapath);
-            file.WriteLine($"Domain: {profile.domain}");
-            file.WriteLine($"Name: {profile.name}");
-            file.WriteLine($"FullName: {profile.fullname}");
-            file.WriteLine($"ProfilePath: {profile.profilepath}");
-            file.WriteLine($"LastUsetime: {profile.lastusetime}");
-            file.Close();
-
-            _IgnoreProfileDir = false;
-            _archivator.Initialize(_settings.DestinationPath + "\\" + "profile_" + profile.name.ToLower() + "_");
-            ProcessDirectory(new DirectoryInfo(profile.profilepath));
-            _archivator.Finnalize();
-        }
-        public void WalkOverCustomPath()
-        {
-            string ident = String.Format("{0:X}" ,_settings.SpecificPath.GetHashCode());
-            DirectoryInfo di = new DirectoryInfo(_settings.SpecificPath + "\\");
-
-            bool isRoot = di.FullName.Equals(di.Root.FullName);
-            string basePath = isRoot ? _settings.DestinationPath + "\\" + "archive_drive_" + di.Name.Substring(0, 1).ToLower() + "_" + ident:
-                                       _settings.DestinationPath + "\\" + "archive_" + di.Name.ToLower() + "_" + ident;
-
-
-            string metapath = basePath + ".meta";
-            
-            StreamWriter file = new StreamWriter(metapath);
-            file.WriteLine(_settings.SpecificPath);
-            file.Close();
-
-            _IgnoreProfileDir = _settings.IgnoreProfileDir;
-            _archivator.Initialize(basePath + "_");
-            ProcessDirectory(di);
-            _archivator.Finnalize();
-        }
-    }
-    enum BackupMode
-    {
-        Both,
-        OnlyProfiles,
-        OnlyDrives,
-        SpecificPath
-    }
-    class Settings
-    {
+        public readonly bool verbose;
         public readonly List<string> BlackList;
-        public readonly bool FixLongPath;
+        public readonly bool FixLongNames;
         public readonly string DestinationPath;
-        public readonly long BatchSizeMax;
+        public readonly ulong BatchSizeMax;
         public readonly string Additional7zArgs;
         public readonly string Args7z;
         public readonly string Path7z;
-        public readonly BackupMode WorkMode;
+        public readonly Backupper.BackupMode WorkMode;
         public readonly string SpecificPath;
         public readonly string WorkingDirectory;
-        public readonly bool IgnoreProfileDir;
-        public Settings(string[] args)
+        public bool IgnoreProfileDir;
+        private Settings()
         {
+            string[] args = Environment.GetCommandLineArgs();
+
+            verbose = (bool)Properties.Settings.Default["Verbose"];
+
             //Получаем значения по-умолчанию из .config
             //Blacklist
             BlackList = new List<string>();
+
             var stringCollection = Properties.Settings.Default["BlackList"] as StringCollection;
             foreach (string s in stringCollection) BlackList.Add(s.ToLower());
 
             //blacklist.Add(((string)Properties.Settings.Default["destination"]).ToLower());
 
-            //FixLongPath
-            FixLongPath = (bool)Properties.Settings.Default["FixLongPath"];
+            //FixLongNames
+            FixLongNames = (bool)Properties.Settings.Default["FixLongNames"];
 
             //DestinationPath
             DestinationPath = (string)Properties.Settings.Default["DestinationPath"];
 
             //BatchSizeMax
-            BatchSizeMax = (long)Properties.Settings.Default["BatchSizeMax"];
+            BatchSizeMax = (ulong)Properties.Settings.Default["BatchSizeMax"];
 
             //Additional7zArgs
             Additional7zArgs = (string)Properties.Settings.Default["Additional7zArgs"];
@@ -477,16 +323,16 @@ namespace backuptool
             switch (workmodeRaw.ToLower())
             {
                 case "both":
-                    WorkMode = BackupMode.Both;
+                    WorkMode = Backupper.BackupMode.Both;
                     break;
                 case "profiles":
-                    WorkMode = BackupMode.OnlyProfiles;
+                    WorkMode = Backupper.BackupMode.OnlyProfiles;
                     break;
                 case "drives":
-                    WorkMode = BackupMode.OnlyDrives;
+                    WorkMode = Backupper.BackupMode.OnlyDrives;
                     break;
                 default:
-                    WorkMode = BackupMode.SpecificPath;
+                    WorkMode = Backupper.BackupMode.SpecificPath;
                     SpecificPath = workmodeRaw;//nonlowercased
                     break;
             }
@@ -495,7 +341,7 @@ namespace backuptool
             IgnoreProfileDir = false;
 
             //Парсим аргументы и меняем настройки
-            int arg_pos = 0;
+            int arg_pos = 1;
             while (arg_pos < args.Length)
             {
                 string arg = args[arg_pos];
@@ -511,12 +357,13 @@ namespace backuptool
                         Console.WriteLine("Поддерживаемые аргументы :\n");
                         Console.WriteLine("-h -help\nВыводит данную справку и выходит из программы\n");
                         Console.WriteLine($" -d -DestinationPath {DestinationPath}\nПуть до целевой папки, куда сохранять архивы\n");
-                        Console.WriteLine($" -FixLongPath {FixLongPath}\nПробовать исправлять длинные(>250 символов) пути\nПереименовывает файл до короткого пути и кладет оригинальное имя в файл .meta рядом с коротким файлом\n");
+                        Console.WriteLine($" -FixLongNames {FixLongNames}\nПробовать исправлять длинные(>127 символов) имена файлов\nПереименовывает файл до короткого и кладет оригинальное имя в файл .meta рядом с коротким файлом\n");
                         Console.WriteLine($" -bs -BatchSizeMax {BatchSizeMax}\nРазмер файлов в пакете для упаковки в отдельный архив\nНапример -BatchSizeMax 100M\n         -BatchSizeMax 10G\n");
                         Console.WriteLine($" -Path7z {Path7z}\nПуть до 7z.exe\n");
                         Console.WriteLine($" -Additional7zArgs {Additional7zArgs}\nДополнительные параметры коммандной строки 7z\n");
                         Console.WriteLine($" -b -Backup [Both | Profiles | Drives | %path%]\nБекапить всё, только профили, только диски(без папки Users) или указанный путь");
                         Console.WriteLine($" -i {IgnoreProfileDir}\nИгнорировать :\\Users");
+                        Console.WriteLine($" -v -verbose {verbose}\nПечатать лог");
                         System.Environment.Exit(0);
                         break;
                     case "-i":
@@ -531,7 +378,7 @@ namespace backuptool
                         string _sizeRaw = args[arg_pos + 1];
                         int len = _sizeRaw.Length;
                         int multiplier = 1;
-                        switch (_sizeRaw[len-1])
+                        switch (_sizeRaw[len - 1])
                         {
                             case 'm':
                             case 'M':
@@ -546,7 +393,7 @@ namespace backuptool
                             default:
                                 break;
                         }
-                        BatchSizeMax = long.Parse(_sizeRaw) * multiplier;
+                        BatchSizeMax = ulong.Parse(_sizeRaw) * (ulong)multiplier;
                         arg_pos++;
                         break;
                     case "-d":
@@ -563,7 +410,7 @@ namespace backuptool
                         {
                             Console.WriteLine($"Expected argument after {arg}, but got end of arguments");
                         }
-                        FixLongPath = bool.Parse(args[arg_pos + 1]);
+                        FixLongNames = bool.Parse(args[arg_pos + 1]);
                         arg_pos++;
                         break;
                     case "-path7z":
@@ -592,20 +439,24 @@ namespace backuptool
                         switch (value)
                         {
                             case "both":
-                                WorkMode = BackupMode.Both;
+                                WorkMode = Backupper.BackupMode.Both;
                                 break;
                             case "profiles":
-                                WorkMode = BackupMode.OnlyProfiles;
+                                WorkMode = Backupper.BackupMode.OnlyProfiles;
                                 break;
                             case "drives":
-                                WorkMode = BackupMode.OnlyDrives;
+                                WorkMode = Backupper.BackupMode.OnlyDrives;
                                 break;
                             default:
-                                WorkMode = BackupMode.SpecificPath;
+                                WorkMode = Backupper.BackupMode.SpecificPath;
                                 SpecificPath = args[arg_pos + 1];//nonlowercased
                                 break;
                         }
                         arg_pos++;
+                        break;
+                    case "-v":
+                    case "-verbose":
+                        verbose = true;
                         break;
                     default:
                         Console.WriteLine($"Unknown argument {arg}\nTerminating!");
@@ -618,12 +469,219 @@ namespace backuptool
             //Обновляем BlackList, чтобы не бекапить сами архивы и текущую рабочую папку
             BlackList.Add(DestinationPath.ToLower());
             BlackList.Add(Directory.GetCurrentDirectory().ToLower());
+        }
+        public static Settings getInstance()
+        {
+            if (instance == null)
+                instance = new Settings();
 
+            return instance;
         }
     }
-    class Program
+    class Validator
     {
-        static public List<UserProfile> GetValidProfiles(DateTime validDate)
+        // WINAPI #####################################################################################################
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern bool GetFileAttributesExW(string lpFileName, GET_FILEEX_INFO_LEVELS fInfoLevelId, out WIN32_FIND_DATAW lpFileInformation);
+        // WINAPI #####################################################################################################
+        private Settings _settings = Settings.getInstance();
+        private Archiver _archiver;
+        public Validator(Archiver archiver)
+        {
+            _archiver = archiver;
+        }
+        public Decision Validate(string directory, string entryname)
+        {
+            string fullname = directory + "\\" + entryname;
+            //Особый случай для корня диска
+            if (fullname.Length <= 7) return Decision.ScanDirectory;
+
+            WIN32_FIND_DATAW data;
+            GetFileAttributesExW(fullname, GET_FILEEX_INFO_LEVELS.GetFileExInfoStandard, out data);
+
+            //Пропускаем скрытые, системные и симлинки
+            if ((data.dwFileAttributes & (uint)FileAttributes.Hidden) != 0) return Decision.Skip;
+            if ((data.dwFileAttributes & (uint)FileAttributes.ReparsePoint) != 0) return Decision.Skip;
+            if ((data.dwFileAttributes & (uint)FileAttributes.System) != 0) return Decision.Skip;
+
+            //Игнор директории профилей
+            if (_settings.IgnoreProfileDir & (fullname.Contains("C:\\Users"))) return Decision.Skip;
+
+            //Черный список
+            foreach (string word in _settings.BlackList)
+            {
+                if (fullname.ToLower().Contains(word)) return Decision.Skip;
+            }
+
+            //Переименование под ограничения ext4
+            if ((entryname.Length >= 127) & _settings.FixLongNames) return Decision.Rename;
+
+
+            if ((data.dwFileAttributes & (uint)FileAttributes.Directory) != 0)
+            {
+                return Decision.ScanDirectory;
+            }
+            else
+            {
+                //Архивирован?
+                if (!_archiver.IsArchivedAlready(fullname.Substring(4), data.ftLastWriteTime)) return Decision.ArchiveFile;
+            }
+
+            return Decision.Skip;
+        }
+    }
+    class FileTreeWalker
+    {
+        // WINAPI #####################################################################################################
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern IntPtr FindFirstFileW(string lpFileName, out WIN32_FIND_DATAW lpFindFileData);
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern bool FindNextFileW(IntPtr hFindFile, ref WIN32_FIND_DATAW lpFindFileData);
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern bool FindClose(ref IntPtr hFindFile);
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern bool MoveFileW(string lpExistingFileName, string lpNewFileName);
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern IntPtr CreateFileW(string lpFileName,
+                                                uint dwDesiredAccess,
+                                                uint dwShareMode,
+                                                uint lpSecurityAttributes,
+                                                uint dwCreationDisposition,
+                                                uint dwFlagsAndAttributes,
+                                                uint hTemplateFile);
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Ansi)]
+        private static extern bool WriteFile(IntPtr hFile, StringBuilder lpBuffer, uint nNumbersOfBytesToWrite, out uint lpNumberOfBytesWritten, IntPtr lpOverlapped);
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern bool CloseHandle(IntPtr hObject);
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern bool GetFileAttributesExW(string lpFileName, GET_FILEEX_INFO_LEVELS fInfoLevelId, out WIN32_FIND_DATAW lpFileInformation);
+
+        private const uint GENERIC_READ = 0x80000000;
+        private const uint GENERIC_WRITE = 0x40000000;
+        private const uint CREATE_NEW = 1;
+        private const uint CREATE_ALWAYS = 2;
+        private const uint OPEN_EXISTING = 3;
+        // WINAPI #####################################################################################################
+
+        private Settings _settings = Settings.getInstance();
+        private Action<string> printlog;
+        private readonly Validator _validator;
+        private readonly Archiver _archiver;
+
+        public FileTreeWalker(Validator validator, Archiver archiver)
+        {
+            _validator = validator;
+            _archiver = archiver;
+            printlog = message => { };
+            if (_settings.verbose) printlog = message => { Console.WriteLine(message); };
+        }
+        private void RenameEntry(string directory, string entryname)
+        {
+            string oldname = entryname;
+
+            string ext = "";
+            string namenoext = entryname;
+            string newname;
+
+            int extpos = entryname.LastIndexOf('.');
+            if (extpos != -1)
+            {
+                ext = entryname.Substring(extpos + 1);
+                namenoext = entryname.Substring(0, extpos);
+                newname = entryname.Substring(0, 100) + String.Format("_{0:X}", entryname.GetHashCode()) + "." + ((ext.Length > 10) ? ext.Substring(0, 10) :
+                                                                                                                                                   ext);
+            }
+            else
+            {
+                newname = entryname.Substring(0, 100) + String.Format("_{0:X}", entryname.GetHashCode());
+            }
+
+            string metaname = entryname.Substring(0, 100) + String.Format("_{0:X}", entryname.GetHashCode()) + ".meta";
+
+            if (!MoveFileW(directory + "\\" + oldname, directory + "\\" + newname))
+            {
+                printlog($"Failed to move from {oldname} to {newname}!");
+            }
+            else
+            {
+                printlog($"Renamed {oldname} to {newname}!");
+
+                var hFile = CreateFileW(directory + "\\" + metaname, GENERIC_READ | GENERIC_WRITE, 0, 0, CREATE_ALWAYS, (uint)FileAttributes.Normal, 0);
+                uint written;
+                StringBuilder buffer = new StringBuilder(oldname);
+                WriteFile(hFile, buffer, (uint)oldname.Length, out written, IntPtr.Zero);
+                CloseHandle(hFile);
+
+                ProcessEntry(directory, newname);
+                ProcessEntry(directory, metaname);
+            }
+        }
+        private void ProcessEntry(string directory, string entryname)
+        {
+            string fullname = directory + ((entryname.Length > 0) ? "\\" + entryname : "");
+
+            var decision = _validator.Validate(directory, entryname);
+            switch (decision)
+            {
+                case Decision.ArchiveFile:
+                    printlog($"{fullname} => archive");
+
+                    WIN32_FIND_DATAW data;
+                    GetFileAttributesExW(fullname, GET_FILEEX_INFO_LEVELS.GetFileExInfoStandard, out data);
+                    ulong filesize = (ulong)((data.nFileSizeHigh << 32) + data.nFileSizeLow);
+                    _archiver.AddToBatch(fullname.Substring(4), filesize);
+
+                    break;
+                case Decision.ScanDirectory:
+                    printlog($"{fullname} => scan");
+
+                    WIN32_FIND_DATAW finddata;
+
+                    var hSearch = FindFirstFileW(fullname + "\\*", out finddata);
+                    do
+                    {
+                        if (finddata.cFileName == ".") continue;
+                        if (finddata.cFileName == "..") continue;
+
+                        ProcessEntry(fullname, finddata.cFileName);
+
+                    } while (FindNextFileW(hSearch, ref finddata) != false);
+                    FindClose(ref hSearch);
+
+                    break;
+                case Decision.Rename:
+                    printlog($"{fullname} => rename");
+                    RenameEntry(directory, entryname);
+
+                    break;
+                case Decision.Skip:
+                default:
+                    printlog($"{fullname} => skip");
+
+                    break;
+            }
+        }
+        public void Walk(string path)
+        {
+            printlog($"Start archiving at {path}");
+
+            ProcessEntry(path, "");
+
+            printlog("All done!");
+        }
+    }
+
+    class Backupper
+    {
+        private readonly Settings _settings = Settings.getInstance();
+        public enum BackupMode
+        {
+            Both,
+            OnlyProfiles,
+            OnlyDrives,
+            SpecificPath
+        }
+        public List<UserProfile> GetValidProfiles(DateTime validDate)
         {
             string validDateStr = validDate.ToString("yyyyMMdd000000.000000+000");
             List<UserProfile> result = new List<UserProfile>();
@@ -672,7 +730,7 @@ namespace backuptool
 
                     UserProfile temp = null;
 
-                    foreach(Domain domname in dom.Forest.Domains)
+                    foreach (Domain domname in dom.Forest.Domains)
                     {
                         if (temp is null)
                         {
@@ -704,32 +762,110 @@ namespace backuptool
 
             return result;
         }
-        static void Main(string[] args)
+        public void DoBackup()
         {
-            Settings settings = new Settings(args);
-            WalkerTreeFile wtf = new WalkerTreeFile(settings);
-            Directory.CreateDirectory(settings.DestinationPath);
-
-            if ((settings.WorkMode == BackupMode.Both) || (settings.WorkMode == BackupMode.OnlyProfiles))
+            switch (_settings.WorkMode)
             {
-                foreach(UserProfile profile in GetValidProfiles(DateTime.Now.AddYears(-1)))
-                {
-                    wtf.WalkOverProfile(profile);
-                }
-            }
-            if ((settings.WorkMode == BackupMode.Both) || (settings.WorkMode == BackupMode.OnlyDrives))
-            {
-                DriveInfo[] allDrives = DriveInfo.GetDrives();
-                foreach (DriveInfo drive in allDrives)
-                {
-                    if ( (drive.IsReady) && (drive.DriveType == DriveType.Fixed) ) wtf.WalkOverDrive(drive.RootDirectory);
-                }
-            }
-            if (settings.WorkMode == BackupMode.SpecificPath)
-            {
-                wtf.WalkOverCustomPath();
+                case BackupMode.OnlyProfiles:
+                    BackupProfiles();
+                    break;
+                case BackupMode.OnlyDrives:
+                    BackupDrives();
+                    break;
+                case BackupMode.Both:
+                    BackupProfiles();
+                    BackupDrives();
+                    break;
+                case BackupMode.SpecificPath:
+                    BackupCustom();
+                    break;
+                default: break;
             }
         }
 
+        private void BackupDrives()
+        {
+            DriveInfo[] allDrives = DriveInfo.GetDrives();
+            foreach (DriveInfo drive in allDrives)
+            {
+                if ((drive.IsReady) && (drive.DriveType == DriveType.Fixed)) BackupSingleDrive(drive.RootDirectory);
+            }
+        }
+        private void BackupSingleDrive(DirectoryInfo root)
+        {
+            var _arc = new Archiver();
+            _arc.Initialize(_settings.DestinationPath + "\\" + "drive_" + root.FullName.Substring(0, 1) + "_");
+            var _val = new Validator(_arc);
+            var _wtf = new FileTreeWalker(_val, _arc);
+
+            _wtf.Walk("\\\\?\\" + root.FullName.TrimEnd('\\'));
+
+            _arc.Finnalize();
+        }
+        private void BackupProfiles()
+        {
+            foreach (UserProfile profile in GetValidProfiles(DateTime.Now.AddYears(-1)))
+            {
+                BackupSingleProfile(profile);
+            }
+        }
+        private void BackupSingleProfile(UserProfile profile)
+        {
+            string metapath = _settings.DestinationPath + "\\profile_" + profile.name.ToLower() + ".meta";
+
+            StreamWriter file = new StreamWriter(metapath);
+            file.WriteLine($"Domain: {profile.domain}");
+            file.WriteLine($"Name: {profile.name}");
+            file.WriteLine($"FullName: {profile.fullname}");
+            file.WriteLine($"ProfilePath: {profile.profilepath}");
+            file.WriteLine($"LastUsetime: {profile.lastusetime}");
+            file.Close();
+
+            _settings.IgnoreProfileDir = false;
+
+            var _arc = new Archiver();
+            _arc.Initialize(_settings.DestinationPath + "\\" + "profile_" + profile.name.ToLower() + "_");
+            var _val = new Validator(_arc);
+            var _wtf = new FileTreeWalker(_val, _arc);
+
+            _wtf.Walk("\\\\?\\" + profile.profilepath.TrimEnd('\\'));
+
+            _arc.Finnalize();
+        }
+        private void BackupCustom()
+        {
+            string ident = String.Format("{0:X}", _settings.SpecificPath.GetHashCode());
+            DirectoryInfo di = new DirectoryInfo(_settings.SpecificPath);
+
+            bool isRoot = di.FullName.Equals(di.Root.FullName);
+            string basePath = isRoot ? _settings.DestinationPath + "\\" + "archive_drive_" + di.Name.Substring(0, 1).ToLower() + "_" + ident :
+                                       _settings.DestinationPath + "\\" + "archive_" + di.Name.ToLower() + "_" + ident;
+
+
+            string metapath = basePath + ".meta";
+
+            StreamWriter file = new StreamWriter(metapath);
+            file.WriteLine(_settings.SpecificPath);
+            file.Close();
+
+            var _arc = new Archiver();
+            _arc.Initialize(basePath + "_");
+
+            var _val = new Validator(_arc);
+            var _wtf = new FileTreeWalker(_val, _arc);
+
+            _wtf.Walk("\\\\?\\" + di.FullName.TrimEnd('\\'));
+
+            _arc.Finnalize();
+        }
+    }
+
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            Backupper backupper = new Backupper();
+            backupper.DoBackup();
+        }
     }
 }

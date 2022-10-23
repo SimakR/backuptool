@@ -3,10 +3,10 @@
   <Profiles />
   <Settings>
     <Setting Name="Path7z" Type="System.String" Scope="Application">
-      <Value Profile="(Default)">7z.exe</Value>
+      <Value Profile="(Default)">7za.exe</Value>
     </Setting>
-    <Setting Name="BatchSizeMax" Type="System.Int64" Scope="Application">
-      <Value Profile="(Default)">10737418240</Value>
+    <Setting Name="BatchSizeMax" Type="System.UInt64" Scope="Application">
+      <Value Profile="(Default)">1073741824</Value>
     </Setting>
     <Setting Name="Additional7zArgs" Type="System.String" Scope="Application">
       <Value Profile="(Default)">-spf -scsUTF-8 -t7z -mx=5 -mmemuse=p50</Value>
@@ -14,7 +14,7 @@
     <Setting Name="DestinationPath" Type="System.String" Scope="Application">
       <Value Profile="(Default)">d:\temp</Value>
     </Setting>
-    <Setting Name="FixLongPath" Type="System.Boolean" Scope="Application">
+    <Setting Name="FixLongNames" Type="System.Boolean" Scope="Application">
       <Value Profile="(Default)">True</Value>
     </Setting>
     <Setting Name="WorkMode" Type="System.String" Scope="Application">
@@ -24,6 +24,8 @@
       <Value Profile="(Default)">&lt;?xml version="1.0" encoding="utf-16"?&gt;
 &lt;ArrayOfString xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"&gt;
   &lt;string&gt;\AppData&lt;/string&gt;
+  &lt;string&gt;.cache&lt;/string&gt;
+  &lt;string&gt;.vscode&lt;/string&gt;
   &lt;string&gt;C:\PerfLogs&lt;/string&gt;
   &lt;string&gt;C:\Program Files&lt;/string&gt;
   &lt;string&gt;C:\Program Files (x86)&lt;/string&gt;
@@ -49,6 +51,9 @@
   &lt;string&gt;.lnk&lt;/string&gt;
   &lt;string&gt;.url&lt;/string&gt;
 &lt;/ArrayOfString&gt;</Value>
+    </Setting>
+    <Setting Name="Verbose" Type="System.Boolean" Scope="Application">
+      <Value Profile="(Default)">True</Value>
     </Setting>
   </Settings>
 </SettingsFile>
