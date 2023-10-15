@@ -38,6 +38,17 @@ namespace backuptool
                 if (fullname.ToLower().Contains(word)) return Decision.Skip;
             }
 
+            //Проверка на читаемый файл
+            try
+            {
+                using (FileStream stream = File.Open(fullname, FileMode.Open, FileAccess.Read))
+                {
+                }
+            }
+            catch (IOException)
+            {
+                return Decision.Skip;
+            }
 
             //Переименование под ограничения ext4
             if ((entryname.Length >= 127) & _settings.FixLongNames) return Decision.Rename;
